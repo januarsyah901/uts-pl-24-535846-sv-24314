@@ -1,0 +1,73 @@
+services:
+  # Service 1: Basis Data MySQL
+  db:
+    image: mysql:8.4.4
+    container_name: sikos-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-sikos}
+      MYSQL_USER: ${DB_USERNAME:-sikos_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-sikos_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+    volumes:
+      - sikos-db-data:/var/lib/mysql
+    networks:
+      - sikos-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root_password}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # Service 2: Backend Laravel (FrankenPHP)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sikos-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-SiKos}
+      APP_ENV: ${APP_ENV:-production}
+      APP_KEY: ${APP_KEY}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-sikos}
+      DB_USERNAME: ${DB_USERNAME:-sikos_user}
+      DB_PASSWORD: ${DB_PASSWORD:-sikos_password}
+    ports:
+      - "8000:8000"
+    networks:
+      - sikos-network
+
+  # Service 3: Frontend Vue (Nginx Reverse Proxy)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: sikos-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks:
+      - sikos-network
+
+volumes:
+  sikos-db-data:
+    name: sikos-db-data
+
+networks:
+  sikos-network:
+    name: sikos-network
+    driver: bridge
